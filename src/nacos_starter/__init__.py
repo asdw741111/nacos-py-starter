@@ -5,7 +5,7 @@ nacos for python
 from .nacos import Nacos, NacosBalanceClient
 from . import func_fuse
 
-__version__ = '1.0.2'
+__version__ = '1.0.3'
 
 name = 'nacos-starter'
 
