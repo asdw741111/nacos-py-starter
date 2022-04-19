@@ -15,6 +15,8 @@ with open(f"src/{module_dir}/__init__.py", encoding="utf-8") as fh:
     version = re.sub(r"[^\d.]", "", str.strip(vl.split("=")[1]))
     namel = [x for x in lines if "name" in x][0]
     name = re.sub(r"[^\w\-_]", "", str.strip(namel.split("=")[1]))
+# read dependencies from requirements.txt
+install_requires=[line.strip() for line in open("requirements.txt").readlines()]
 
 setuptools.setup(
     name=name,
@@ -30,7 +32,8 @@ setuptools.setup(
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
-        "Operating System :: OS Independent",
+        "Operating System :: OS Independent"
     ],
+    install_requires=install_requires,
     python_requires=">=3.6",
 )
