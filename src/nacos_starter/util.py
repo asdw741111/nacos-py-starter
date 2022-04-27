@@ -3,16 +3,17 @@ nacos operate foundation utils.
 """
 import socket
 import requests
-from requests.exceptions import ConnectionError
+from requests.exceptions import ConnectionError as RequestConnectionError
 import logging
 import time as dt
 from requests import Response
 from typing import List, Any
-from .constants import LOG_FORMAT, DATE_FORMAT, TIME_OUT
+from .constants import LOG_FORMAT, DATE_FORMAT
+from .exception import ForbiddenException, NotFoundException, InternalException
 
 #日志配置
 logging.basicConfig(level=logging.INFO,format=LOG_FORMAT,datefmt=DATE_FORMAT)
-logger = logging.getLogger('flask.app')
+logger = logging.getLogger("flask.app")
 
 if not logger.hasHandlers():
     logger = logging
@@ -43,6 +44,8 @@ def do_request(method,url, *args,
     method = str.upper(method or "GET")
     resp: Response
     logger.debug("[nacos] 请求 - [%s] - %s", method, url)
+    if "timeout" not in kwargs:
+        kwargs["timeout"] = DEFAULT_TIMEOUT
     if method == "GET":
         url = url + "/"
         for item in args:
@@ -59,7 +62,9 @@ def do_request(method,url, *args,
         resp = requests.post(url, *args, **kwargs)
     if method == "PUT":
         return requests.put(url, *args, **kwargs)
-    if resp:
+    if resp is None:
+        return "Request Error"
+    elif resp:
         try:
             if MediaType.ORIGIN_RESPONSE == response_type:
                 return resp
@@ -72,8 +77,13 @@ def do_request(method,url, *args,
                 return resp.json()
         finally:
             resp.close()
-    return "Request Error"
-
+    else:
+        if resp.status_code == 403:
+            raise ForbiddenException()
+        if resp.status_code == 404:
+            raise NotFoundException()
+        if resp.status_code == 500:
+            raise InternalException()
 
 class HostClient:
     """
@@ -116,7 +126,7 @@ class HostClient:
                 data=data, response_type=response_type, *args, **kwargs)
             self.is_health = True
             return result
-        except ConnectionError as e:
+        except RequestConnectionError as e:
             self.trys = self.trys - 1
             logger.warning("[Nacos] URL [%s] 请求失败：%s", url, str(e))
             self.is_health = False
@@ -284,7 +294,7 @@ def get_access_token(host:HostPool, username="", password="") -> Any:
             data = h.login(username=username, password=password)
             if data:
                 return data
-    except ConnectionError as e:
+    except RequestConnectionError as e:
         logger.error("连接超时 %s", str(e))
     except Exception as e:
         logger.exception(e, exc_info=True)

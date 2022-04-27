@@ -14,6 +14,7 @@ from .constants import TIME_OUT, BEAT_TIME, REGISTER_DICT_KEY
 import logging
 from requests import Response
 import threading
+from .exception import ForbiddenException
 
 class MediaType:
     """
@@ -69,34 +70,37 @@ class Nacos:
         client = self.host_pool.borrow()
         return client
 
-    def __wrap_auth_url(self, url = ""):
-        """包装请求链接，如果需要认证则会拼接accessToken
-
-        Args
-          uri: 需要包装认证信息的链接, e.g. "http://127.0.0.1/nacos/instance"
-
-        Returns:
-          包装后的链接地址
+    def __refresh_token(self):
+        """刷新token
         """
-        is_auth = False
+        login_data = util.get_access_token(
+            host=self.host_pool,
+            username=self.username, password=self.password)
+        if login_data:
+            self.access_token = login_data["accessToken"]
+            self.access_token_invalid_time = (int(time.time()) +
+                login_data["tokenTtl"] - 10) # 设置10秒偏移量
+            return self.access_token
+        else:
+            logger.error("nacos认证失败，请检查账号密码是否正确")
+            exit(1)
+
+    def __get_token(self):
+        """检查并获取token
+        """
         if self.access_token:
             if time.time() < self.access_token_invalid_time:
-                is_auth = True
+                return self.access_token
             else:
-                login_data = util.get_access_token(
-                    host=self.host_pool, username=self.username,
-                    password=self.password)
-                if login_data:
-                    self.access_token = login_data["accessToken"]
-                    # 设置10秒偏移量
-                    vt = int(time.time()) + login_data["tokenTtl"] - 10
-                    self.access_token_invalid_time = vt
-                    is_auth = True
-                else:
-                    logging.error("nacos认证失败，请检查账号密码是否正确")
-                    exit(1)
-        token = self.access_token
-        if is_auth:
+                return self.__refresh_token()
+        return self.__refresh_token()
+
+    def __wrap_auth_url(self, url = ""):
+        """
+        包装请求链接，如果需要认证则会拼接accessToken
+        """
+        token = self.__get_token()
+        if token:
             return (url + "&accessToken=" +
                 token if "?" in url else url + "?accessToken=" + token)
         return url
@@ -148,7 +152,7 @@ class Nacos:
                     metadata = self._register_dict["metadata"]
                     weight = self._register_dict["weight"]
                     enabled = self._register_dict["enabled"]
-                    self.register_service(service_ip,service_port,service_name,
+                    self.register_service(service_ip,service_name,service_port,
                                          namespace_id,group_name,cluster_name,
                                          ephemeral,metadata,weight,enabled)
             except Exception:
@@ -312,11 +316,14 @@ class Nacos:
                 time.sleep(BEAT_TIME)
                 re = self.__get_host().beat(
                     access_token=self.access_token, params=params_beat)
-                if (not re or re.status_code != 200
+                if (re is None or re.status_code != 200
                     or re.json()["code"] != 10200):
                     self._register_dict[REGISTER_DICT_KEY] = int(time.time())-10
                     logger.warning("[Nacos] 心跳请求失败: %s", (re and re.text))
-                    break
+
+                if re is not None and re.status_code == 403:
+                    self.__refresh_token()
+                    logger.info("[Nacos] 重新刷新token结果: %s", self.access_token)
             except json.JSONDecodeError:
                 self._register_dict[REGISTER_DICT_KEY] = int(time.time()) - 10
                 break
@@ -325,7 +332,7 @@ class Nacos:
                 break
 
     def register_service(self,service_ip,
-                        service_port,service_name,namespace_id="public",
+                        service_name,service_port=80,namespace_id="public",
                         group_name="DEFAULT_GROUP",cluster_name="DEFAULT",
                         ephemeral=True,metadata=None,weight=1,enabled=True):
         """注册服务
@@ -334,8 +341,8 @@ class Nacos:
 
         Args:
           service_ip: 当前服务的ip，会注册到nacos被其他服务来调用
-          service_port: 当前服务的端口号，用于被其他服务调用
           service_name: 服务名称
+          service_port: 当前服务的端口号，用于被其他服务调用
           namespace_id: 命名空间，默认 public
           group_name: 注册的group 默认 DEFAULT_GROUP
           cluster_name: nacos集群名称，默认 DEFAULT
@@ -382,6 +389,8 @@ class Nacos:
                 beat_thread.start()
             else:
                 logger.error("服务注册失败 %s", re)
+        except ForbiddenException:
+            self.__refresh_token()
         except Exception:
             logger.exception("服务注册失败",exc_info=True)
 
@@ -432,28 +441,39 @@ class NacosBalanceClient:
         client = self.host_pool.borrow()
         return client
 
+    def __refresh_token(self):
+        """刷新token
+        """
+        login_data = util.get_access_token(
+            host=self.host_pool,
+            username=self.username, password=self.password)
+        if login_data:
+            self.access_token = login_data["accessToken"]
+            self.access_token_invalid_time = (int(time.time()) +
+                login_data["tokenTtl"] - 10) # 设置10秒偏移量
+            return self.access_token
+        else:
+            logger.error("nacos认证失败，请检查账号密码是否正确")
+            exit(1)
+
+    def __get_token(self):
+        """检查并获取token
+        """
+        if self.access_token:
+            if time.time() < self.access_token_invalid_time:
+                return self.access_token
+            else:
+                return self.__refresh_token()
+        return self.__refresh_token()
+
+
     def __wrap_auth_url(self, url = ""):
         """
         包装请求链接，如果需要认证则会拼接accessToken
         """
-        is_auth = False
-        if self.access_token:
-            if time.time() < self.access_token_invalid_time:
-                is_auth = True
-            else:
-                login_data = util.get_access_token(
-                    host=self.host_pool,
-                    username=self.username, password=self.password)
-                if login_data:
-                    self.access_token = login_data["accessToken"]
-                    self.access_token_invalid_time = (int(time.time()) +
-                        login_data["tokenTtl"] - 10) # 设置10秒偏移量
-                    is_auth = True
-                else:
-                    logger.error("nacos认证失败，请检查账号密码是否正确")
-                    exit(1)
-        token = self.access_token
-        if is_auth:
+        token = self.__get_token()
+
+        if token:
             return (url + "&accessToken=" +
                 token if "?" in url else url + "?accessToken=" + token)
         return url
@@ -508,6 +528,9 @@ class NacosBalanceClient:
                         files[key] = (None,arg[key])
                 resp = requests.put(url,files=files, timeout=self.timeout)
         if resp:
+            if resp.status_code == 403:
+                self.__refresh_token()
+                return "Token forbidden, refreshed now"
             if (not produces or produces == MediaType.TEXT_PLAIN_VALUE
                 or produces == MediaType.TEXT_HTML_VALUE):
                 return resp.text
