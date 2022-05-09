@@ -16,6 +16,9 @@ from requests import Response
 import threading
 from .exception import ForbiddenException
 
+def info(msg, *args, **kwargs):
+    logger.info("[Nacos] " + msg, *args, **kwargs)
+
 class MediaType:
     """
     http请求参数类型
@@ -126,13 +129,13 @@ class Nacos:
                     if x > 50 and self.config_thread is None:
                         md5_content = config_msg[3]
                         app_config = self._config_dict[item]
-                        config_thread = threading.Thread(
+                        self.config_thread = threading.Thread(
                             target=self.__config_listening_thread_run,
                             args=(data_id, group, tenant,
                             md5_content, app_config))
                         hk = data_id + group + tenant
                         self._thread_healthy_dict[hk] = int(time.time())
-                        config_thread.start()
+                        self.config_thread.start()
                         logger.info(
                             "配置信息监听线程重启成功: dataId=%s; group=%s; tenant=%s",
                             data_id, group, tenant)
@@ -207,17 +210,19 @@ class Nacos:
             re = requests.post(
                 license_config_url,
                 data={"Listening-Configs": lck},
+                timeout=50,
                 headers=header)
             if re.text != "":
                 try:
                     re = requests.get(get_config_url, params=params)
-                    nacos_json = re.json()
+                    info("获取更新配置内容为\n%s", re.text)
+                    nacos_json = self.__get_config_dict(re.text)
                     md5 = hashlib.md5()
                     md5.update(re.content)
                     md5_content = md5.hexdigest()
                     for item in nacos_json:
                         app_config[item] = nacos_json[item]
-                    logger.debug(
+                    info(
                         "配置信息更新成功: dataId=%s; group=%s; tenant=%s",
                             data_id, group, tenant)
                 except Exception:

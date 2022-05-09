@@ -11,6 +11,7 @@ from nacos_starter import Nacos
 
 if __name__ == "__main__":
     NACOS_SERVER_ADDR = "62.234.204.235"
+    # NACOS_SERVER_ADDR = "115.231.34.84:80"
     NACOS_USERNAME = "nacos"
     NACOS_PASSWORD = "Hlth81l&1"
     nacos_server = Nacos(
