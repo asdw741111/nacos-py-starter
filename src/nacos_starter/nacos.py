@@ -123,7 +123,7 @@ class Nacos:
                     tenant = config_msg[2]
                     ht = self._thread_healthy_dict[data_id + group + tenant]
                     x = int(time.time()) - ht
-                    if x > 50:
+                    if x > 50 and self.config_thread is None:
                         md5_content = config_msg[3]
                         app_config = self._config_dict[item]
                         config_thread = threading.Thread(
@@ -188,9 +188,16 @@ class Nacos:
         license_config_url = self.__wrap_auth_url(
             "http://" + self.__get_host().host +
             "/nacos/v1/cs/configs/listener")
+        # 设置长连接30秒，接口会在30秒后返回结果
         header = {"Long-Pulling-Timeout": "30000"}
         dk = data_id + group + tenant
         while True:
+            try:
+                time.sleep(BEAT_TIME)
+            except Exception:
+                break
+            if not self.config_thread:
+                break
             self._thread_healthy_dict[dk] = int(time.time())
             if tenant == "public":
                 lck = data_id + "\002" + group + "\002" + md5_content + "\001"
@@ -210,7 +217,7 @@ class Nacos:
                     md5_content = md5.hexdigest()
                     for item in nacos_json:
                         app_config[item] = nacos_json[item]
-                    logger.info(
+                    logger.debug(
                         "配置信息更新成功: dataId=%s; group=%s; tenant=%s",
                             data_id, group, tenant)
                 except Exception:
@@ -218,6 +225,7 @@ class Nacos:
                         "配置信息更新失败：dataId=" + data_id + "; group=" +
                         group + "; tenant=" + tenant,
                         exc_info=True)
+                    self.config_thread = None
                     break
     def __get_data_id(self, env="",file_type="yaml"):
         """获取dataId，用于定位到nacos配置文件
@@ -281,11 +289,11 @@ class Nacos:
                 app_config[item] = nacos_json[item]
             logger.info("配置获取成功：dataId=%s; group=%s; tenant=%s",
                 data_id, group, tenant)
-            config_thread = threading.Thread(
+            self.config_thread = threading.Thread(
                 target=self.__config_listening_thread_run,
                 args=(data_id,group,tenant,md5_content,app_config))
             self._thread_healthy_dict[data_id+group+tenant] = int(time.time())
-            config_thread.start()
+            self.config_thread.start()
         except Exception:
             logger.exception("配置获取失败：dataId="+
                 data_id+"; group="+group+"; tenant="+tenant, exc_info=True)
