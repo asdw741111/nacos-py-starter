@@ -1,20 +1,23 @@
 """
 nacos module.
 """
-import yaml
-import requests
-import time
 import hashlib
-import urllib
 import json
-import typing as t
-from . import util
-from .util import HostPool, logger
-from .constants import TIME_OUT, BEAT_TIME, REGISTER_DICT_KEY
 import logging
-from requests import Response
 import threading
+import time
+import typing as t
+import urllib
+
+import requests
+import yaml
+from requests import Response
+
+from . import util
+from .constants import BEAT_TIME, REGISTER_DICT_KEY, TIME_OUT
 from .exception import ForbiddenException
+from .util import HostPool, logger
+
 
 def info(msg, *args, **kwargs):
     logger.info("[Nacos] " + msg, *args, **kwargs)

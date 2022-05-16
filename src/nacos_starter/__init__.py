@@ -2,10 +2,10 @@
 nacos for python
 
 """
-from .nacos import Nacos, NacosBalanceClient
 from . import func_fuse
+from .nacos import Nacos, NacosBalanceClient
 
-__version__ = '1.0.6'
+__version__ = '1.0.8'
 
 name = 'nacos-starter'
 

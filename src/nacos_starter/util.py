@@ -177,10 +177,11 @@ class HostClient:
         维持心跳
 
         Args:
-        access_token : str
-            token，通过登录获取
-        params : dict
-            用于维持心跳的请求参数
+            access_token: token，通过登录获取
+            params: 用于维持心跳的请求参数
+
+        Returns:
+            response对象
         """
         uri = "/ns/instance/beat?accessToken=" + access_token
         if params:
