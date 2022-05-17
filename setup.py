@@ -1,8 +1,9 @@
 """
 build for publish script.
 """
-import setuptools
 import re
+
+import setuptools
 
 module_dir = "nacos_starter"
 
@@ -28,7 +29,9 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url="",
     include_package_data=True,
-    packages=["src"], # 自动查找模块
+    package_dir={"": "src"},
+    # 自动查找模块
+    packages=setuptools.find_packages(where="src"),
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
