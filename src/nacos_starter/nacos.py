@@ -183,17 +183,12 @@ class Nacos:
             md5Content: str 内容md5，用于快速比较是否配置有修改
             myConfig: dict 应用当前配置字典
         """
-        get_config_url = self.__wrap_auth_url("http://" +
-            self.__get_host().host + "/nacos/v1/cs/configs")
         params = {
             "dataId": data_id,
             "group": group,
             "tenant": tenant
         }
 
-        license_config_url = self.__wrap_auth_url(
-            "http://" + self.__get_host().host +
-            "/nacos/v1/cs/configs/listener")
         # 设置长连接30秒，接口会在30秒后返回结果
         header = {"Long-Pulling-Timeout": "30000"}
         dk = data_id + group + tenant
@@ -204,6 +199,12 @@ class Nacos:
                 break
             if not self.config_thread:
                 break
+            # URL
+            get_config_url = self.__wrap_auth_url("http://" +
+                self.__get_host().host + "/nacos/v1/cs/configs")
+            license_config_url = self.__wrap_auth_url(
+                "http://" + self.__get_host().host +
+                "/nacos/v1/cs/configs/listener")
             self._thread_healthy_dict[dk] = int(time.time())
             if tenant == "public":
                 lck = data_id + "\002" + group + "\002" + md5_content + "\001"
@@ -215,26 +216,35 @@ class Nacos:
                 data={"Listening-Configs": lck},
                 timeout=50,
                 headers=header)
-            if re.text != "":
-                try:
-                    re = requests.get(get_config_url, params=params)
-                    info("获取更新配置内容为\n%s", re.text)
-                    nacos_json = self.__get_config_dict(re.text)
-                    md5 = hashlib.md5()
-                    md5.update(re.content)
-                    md5_content = md5.hexdigest()
-                    for item in nacos_json:
-                        app_config[item] = nacos_json[item]
-                    info(
-                        "配置信息更新成功: dataId=%s; group=%s; tenant=%s",
-                            data_id, group, tenant)
-                except Exception:
-                    logger.exception(
-                        "配置信息更新失败：dataId=" + data_id + "; group=" +
-                        group + "; tenant=" + tenant,
-                        exc_info=True)
-                    self.config_thread = None
-                    break
+            if re.status_code == 403:
+                # relogin
+                info("获取配置token失效, 准备重新获取")
+                self.__refresh_token()
+            elif re.status_code == 200:
+                if re.text != "":
+                    try:
+                        re = requests.get(get_config_url, params=params)
+                        info("获取更新配置内容为\n%s", re.text)
+                        nacos_json = self.__get_config_dict(re.text)
+                        md5 = hashlib.md5()
+                        md5.update(re.content)
+                        md5_content = md5.hexdigest()
+                        for item in nacos_json:
+                            app_config[item] = nacos_json[item]
+                        info(
+                            "配置信息更新成功: dataId=%s; group=%s; tenant=%s",
+                                data_id, group, tenant)
+                    except Exception:
+                        logger.exception(
+                            "配置信息更新失败：dataId=" + data_id + "; group=" +
+                            group + "; tenant=" + tenant,
+                            exc_info=True)
+                        self.config_thread = None
+                        break
+            else:
+                info("获取配置失败终止监听,status_code-%s, message-%s",
+                    re.status_code, re.text)
+                break
     def __get_data_id(self, env="",file_type="yaml"):
         """获取dataId，用于定位到nacos配置文件
         """
