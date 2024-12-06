@@ -8,7 +8,7 @@ import threading
 import time
 import typing as t
 import urllib
-
+import sys
 import requests
 import yaml
 from requests import Response
@@ -122,7 +122,7 @@ class Nacos:
             self.healthy = int(time.time())
             #检查configThread
             try:
-                for item in self._config_dict:
+                for item, value in self._config_dict.items():
                     config_msg = item.split("\001")
                     data_id = config_msg[0]
                     group = config_msg[1]
@@ -131,7 +131,7 @@ class Nacos:
                     x = int(time.time()) - ht
                     if x > 50 and self.config_thread is None:
                         md5_content = config_msg[3]
-                        app_config = self._config_dict[item]
+                        app_config = value
                         self.config_thread = threading.Thread(
                             target=self.__config_listening_thread_run,
                             args=(data_id, group, tenant,
@@ -223,6 +223,7 @@ class Nacos:
             elif re.status_code == 200:
                 if re.text != "":
                     try:
+                        # pylint: disable=missing-timeout
                         re = requests.get(get_config_url, params=params)
                         info("获取更新配置内容为\n%s", re.text)
                         nacos_json = self.__get_config_dict(re.text)
@@ -290,6 +291,7 @@ class Nacos:
             "tenant": tenant
         }
         try:
+            # pylint: disable=missing-timeout
             re = requests.get(get_config_url, params=params)
             if re.status_code != 200:
                 logger.warning("配置获取失败：dataId="+
@@ -366,7 +368,7 @@ class Nacos:
         将当前服务注册到nacos
 
         Args:
-          service_ip: 当前服务的ip，会注册到nacos被其他服务来调用
+          service_ip: 当前服务的ip，会注册到nacos被其他服务来调用，如果不设置会自动获取当前服务器的IP
           service_name: 服务名称
           service_port: 当前服务的端口号，用于被其他服务调用
           namespace_id: 命名空间，默认 public
@@ -431,12 +433,25 @@ def default_time_out_fun():
 
 class NacosBalanceClient:
     """
-    用于调用其他服务接口
+    用于调用其他服务接口, 类似java里边的feign, 接口调用支持负载均衡
     """
     def __init__(self,host="127.0.0.1:8848",service_name="", username="",
         password="",
         group="DEFAULT_GROUP",namespace_id="public",timeout=TIME_OUT,
         fallback_fun=default_fallback_fun, time_out_fun=default_time_out_fun):
+        """_summary_
+
+        Args:
+            host (str, optional): nacos地址. Defaults to "127.0.0.1:8848".
+            service_name (str, optional): 要调用的服务名，在nacos管理页面查看. Defaults to "".
+            username (str, optional): nacos账号. Defaults to "".
+            password (str, optional): nacos密码. Defaults to "".
+            group (str, optional): group. Defaults to "DEFAULT_GROUP".
+            namespace_id (str, optional): namespace的id. Defaults to "public".
+            timeout (_type_, optional): 超时时间, 单位秒. Defaults to 10.
+            fallback_fun (_type_, optional): 失败回调. Defaults to default_fallback_fun.
+            time_out_fun (_type_, optional): 超时回调. Defaults to default_time_out_fun.
+        """
         self.host = host
         self.host_pool = HostPool(host)
         self.service_name = service_name
@@ -459,7 +474,7 @@ class NacosBalanceClient:
                 self.access_token_invalid_time = int(time.time()) + it
             else:
                 logger.error("nacos认证失败，请检查账号密码是否正确")
-                exit(1)
+                sys.exit(1)
     def __get_host(self):
         """
         获取请求的地址和端口信息，内部通过循环遍历返回一个可用的地址
@@ -480,7 +495,7 @@ class NacosBalanceClient:
             return self.access_token
         else:
             logger.error("nacos认证失败，请检查账号密码是否正确")
-            exit(1)
+            sys.exit(1)
 
     def __get_token(self):
         """检查并获取token
@@ -516,10 +531,10 @@ class NacosBalanceClient:
             for item in args:
                 url = url + str(item) + "/"
             url = url[:-1]
-            if kwargs.__len__() != 0:
+            if len(kwargs) != 0:
                 url = url + "?"
-                for item in kwargs:
-                    url = url + str(item) + "=" + str(kwargs[item]) + "&"
+                for item, value in kwargs.items():
+                    url = url + str(item) + "=" + str(value) + "&"
                 url = url[:-1]
             logger.debug("feign请求接口 %s", url)
             resp = requests.get(url, timeout=self.timeout)
@@ -576,10 +591,11 @@ class NacosBalanceClient:
             "namespaceId": namespace_id
         }
         get_provider_url = self.__wrap_auth_url(get_provider_url)
+        # pylint: disable=missing-timeout
         re = requests.get(get_provider_url, params=params)
         if re.status_code != 200:
             logger.error("nacos返回状态码[%s], 信息：%s", re.status_code, re.text)
-            exit(0)
+            sys.exit(0)
         try:
             msg = re.json()["hosts"]
         except json.JSONDecodeError:

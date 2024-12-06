@@ -51,16 +51,19 @@ def do_request(method,url, *args,
         for item in args:
             url = url + str(item) + "/"
         url = url[:-1]
-        if kwargs.__len__() != 0:
+        if len(kwargs) != 0:
             url = url + "?"
-            for item in kwargs:
-                url = url + str(item) + "=" + str(kwargs[item]) + "&"
+            for item, value in kwargs.items():
+                url = url + str(item) + "=" + str(value) + "&"
             url = url[:-1]
         logger.debug("请求接口 %s", url)
+        # pylint: disable=missing-timeout
         resp = requests.get(url, *args, **kwargs)
     if method == "POST":
+        # pylint: disable=missing-timeout
         resp = requests.post(url, *args, **kwargs)
     if method == "PUT":
+        # pylint: disable=missing-timeout
         return requests.put(url, *args, **kwargs)
     if resp is None:
         return "Request Error"
@@ -118,7 +121,7 @@ class HostClient:
           response_type: 返回结果格式，用于对返回结果自动处理，默认json
 
         Returns:
-          根据返回结果类型处理过的接口调用结果，或者请求失败返回None
+          根据返回结果类型处理过的接口调用结果，或者请求失败返回None
         """
         url = self.__get_prefix_uri() + uri
         try:

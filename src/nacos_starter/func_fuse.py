@@ -39,18 +39,18 @@ def default_except_fallback_func(ex, *args, **kwargs):
     )
 
 
-class FuncFuse(object):
+class DegradeRule(object):
     """请求接口装饰器，用于配置一个要请求的服务接口"""
 
     def __init__(
         self,
         fallback_func=default_fall_back_func,
-        timeout_fallback_Func=default_timeout_fallback_func,
+        timeout_fallback_func=default_timeout_fallback_func,
         except_fallback_func=default_except_fallback_func,
     ):
         self._func_time = {}
         self.fallback_func = fallback_func  # 熔断回调函数
-        self.timeout_fallback_func = timeout_fallback_Func  # 未触发熔断时 超时响应的回调函数
+        self.timeout_fallback_func = timeout_fallback_func  # 未触发熔断时 超时响应的回调函数
         self.except_fallback_func = except_fallback_func  # 未触发熔断时 异常响应的回调函数
         self._func_fuse = {}  # 存放熔断信息
         self.__kwargs = None
@@ -126,7 +126,7 @@ class FuncFuse(object):
         else:
             return False
 
-    def fuse(
+    def hystrix(
         self,
         timeout=6,
         fuse_status=False,
@@ -134,6 +134,15 @@ class FuncFuse(object):
         time_windows=5,
         time_count=2,
     ):
+        """熔断控制
+
+        Args:
+            timeout (int, optional): 超时时间. Defaults to 6.
+            fuse_status (bool, optional): _description_. Defaults to False.
+            except_percent (float, optional): 熔断阈值, 时间窗口内失败请求数占总请求数比例, 0~1之间. Defaults to 0.5.
+            time_windows (int, optional): 时间窗口, 单位秒. Defaults to 5.
+            time_count (int, optional): 时间窗口内用于判断熔断的总请求数, 达到该值才会判断是否需要熔断. Defaults to 2.
+        """
         def get_f(fn):
             def get_args(*args, **kwargs):
                 self.__kwargs = kwargs
@@ -145,9 +154,8 @@ class FuncFuse(object):
                     return self.fallback_func(fn.__name__, *args, **kwargs)
                 tid = time.time()
                 func_thread = threading.Thread(
-                    target=self.__go_func, args=(tid, fn, fuse_status)
+                    target=self.__go_func, args=(tid, fn, fuse_status), daemon=True
                 )
-                func_thread.setDaemon(True)
                 func_thread.start()
                 func_thread.join(timeout)
                 try:
@@ -182,6 +190,12 @@ class FuncFlowControl:
         self._func_return = None
 
     def flow_control(self, time_windows, max_count):
+        """流量控制
+
+        Args:
+            time_windows (int): 时间窗口, 单位秒, 表示从当前时间往前推多少秒用于计算最大请求数
+            max_count (int): 时间窗口内最大请求数, 如果超出则执行fall_back_func
+        """
         def get_f(fn):
             try:
                 self._flow_control_msg[fn]
