@@ -12,12 +12,23 @@ import sys
 import requests
 import yaml
 from requests import Response
-
+import signal
 from . import util
 from .constants import BEAT_TIME, REGISTER_DICT_KEY, TIME_OUT
 from .exception import ForbiddenException
 from .util import HostPool, logger
 
+
+# 定义一个全局变量作为退出标志
+stop_flag = False
+
+def signal_handler(signum, frame):
+    global stop_flag
+    logging.warning("Received interrupt signal. Setting stop flag...")
+    stop_flag = True
+
+# 注册信号处理器
+signal.signal(signal.SIGINT, signal_handler)
 
 def info(msg, *args, **kwargs):
     logger.info("[Nacos] " + msg, *args, **kwargs)
@@ -117,7 +128,7 @@ class Nacos:
         register_service注册服务以及config获取配置后，这两个方法会分别启动线程维持心跳,
         本方法用于做异常处理，多次心跳失败后会重新进行注册和配置获取
         """
-        while True:
+        while not stop_flag:
             time.sleep(5)
             self.healthy = int(time.time())
             #检查configThread
@@ -135,7 +146,8 @@ class Nacos:
                         self.config_thread = threading.Thread(
                             target=self.__config_listening_thread_run,
                             args=(data_id, group, tenant,
-                            md5_content, app_config))
+                            md5_content, app_config),
+                            daemon=True)
                         hk = data_id + group + tenant
                         self._thread_healthy_dict[hk] = int(time.time())
                         self.config_thread.start()
@@ -163,11 +175,13 @@ class Nacos:
                                          ephemeral,metadata,weight,enabled)
             except Exception:
                 logger.exception("服务注册心跳进程健康检查失败",exc_info=True)
+            if stop_flag:
+                break
 
     def healthy_check(self):
         """健康检查
         """
-        th = threading.Thread(target=self.__healthy_check_thread_run)
+        th = threading.Thread(target=self.__healthy_check_thread_run, daemon=True)
         th.start()
         logger.info("健康检查线程已启动")
 
@@ -192,12 +206,14 @@ class Nacos:
         # 设置长连接30秒，接口会在30秒后返回结果
         header = {"Long-Pulling-Timeout": "30000"}
         dk = data_id + group + tenant
-        while True:
+        while not stop_flag:
             try:
                 time.sleep(BEAT_TIME)
             except Exception:
                 break
             if not self.config_thread:
+                break
+            if stop_flag:
                 break
             # URL
             get_config_url = self.__wrap_auth_url("http://" +
@@ -311,7 +327,7 @@ class Nacos:
                 data_id, group, tenant)
             self.config_thread = threading.Thread(
                 target=self.__config_listening_thread_run,
-                args=(data_id,group,tenant,md5_content,app_config))
+                args=(data_id,group,tenant,md5_content,app_config), daemon=True)
             self._thread_healthy_dict[data_id+group+tenant] = int(time.time())
             self.config_thread.start()
         except Exception:
@@ -338,7 +354,7 @@ class Nacos:
             "beat": urllib.request.quote(json.dumps(beat_json))
         }
 
-        while True:
+        while not stop_flag:
             self._register_dict[REGISTER_DICT_KEY] = int(time.time())
             try:
                 time.sleep(BEAT_TIME)
@@ -413,7 +429,7 @@ class Nacos:
                 beat_thread = threading.Thread(
                     target=self.__register_beat_thread_run,
                     args=(service_ip,service_port,service_name,
-                    group_name,namespace_id,metadata,weight))
+                    group_name,namespace_id,metadata,weight), daemon=True)
                 beat_thread.start()
             else:
                 logger.error("服务注册失败 %s", re)
